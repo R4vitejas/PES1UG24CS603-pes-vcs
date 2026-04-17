@@ -256,7 +256,16 @@ int index_add(Index *index, const char *path) {
     }
     free(buf);
 
-    // (Note: We'll implement updating the Index entry in the next commit)
-    (void)index;
+    // 4. Update existing entry OR add a new one
+    IndexEntry *entry = index_find(index, path);
+    if (!entry) {
+        if (index->count >= MAX_INDEX_ENTRIES) return -1;
+        entry = &index->entries[index->count++];
+        strncpy(entry->path, path, sizeof(entry->path) - 1);
+        entry->path[sizeof(entry->path) - 1] = '\0';
+    }
+
+    // (Next commit will handle metadata and saving)
+    entry->hash = hash; 
     return 0; 
 }
