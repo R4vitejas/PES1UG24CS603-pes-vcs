@@ -10,6 +10,7 @@
 //   "100644 hello.txt\0" followed by 32 raw bytes of SHA-256
 
 #include "tree.h"
+#include "index.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -129,9 +130,33 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 //   - object_write    : save that binary buffer to the store as OBJ_TREE
 //
 // Returns 0 on success, -1 on error.
+// Forward declaration of our recursive helper function
+static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id);
+
 int tree_from_index(ObjectID *id_out) {
-    // TODO: Implement recursive tree building
-    // (See Lab Appendix for logical steps)
-    (void)id_out;
-    return -1;
+    Index index;
+    // 1. Load the current index (staging area)
+    if (index_load(&index) != 0) {
+        return -1;
+    }
+
+    // 2. If the index is empty, we can't build a tree
+    if (index.count == 0) {
+        return -1;
+    }
+
+    // 3. Kick off the recursive tree builder from the root directory
+    // We pass the full index, the count, and an empty prefix string "" meaning "root"
+    return write_tree_level(index.entries, index.count, "", id_out);
+}
+
+// Helper function to build a tree object for one specific directory level
+static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id) {
+    // Temporary placeholders to keep the compiler happy for this commit
+    (void)entries;
+    (void)count;
+    (void)prefix;
+    (void)out_id;
+    
+    return -1; // We will build this logic out in the next commits!
 }
