@@ -94,9 +94,24 @@ int object_exists(const ObjectID *id) {
 //
 // Returns 0 on success, -1 on error.
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
-    // TODO: Implement
-    (void)type; (void)data; (void)len; (void)id_out;
-    return -1;
+    // 1. Determine the type string for the header
+    const char *type_str = "";
+    if (type == OBJ_BLOB) type_str = "blob";
+    else if (type == OBJ_TREE) type_str = "tree";
+    else if (type == OBJ_COMMIT) type_str = "commit";
+    else return -1; // Unknown type
+
+    // 2. Build the header: "<type> <size>\0"
+    // We add 1 to snprintf's return value to include the null terminator in our count
+    char header[128];
+    int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len) + 1;
+
+    // Temporary placeholders so the compiler doesn't complain about unused variables yet
+    (void)header_len;
+    (void)data;
+    (void)id_out;
+
+    return -1; // We will remove this in the next commit
 }
 
 // Read an object from the store.
