@@ -131,7 +131,50 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 //
 // Returns 0 on success, -1 on error.
 // Forward declaration of our recursive helper function
-static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id);
+// Helper function to build a tree object for one specific directory level
+static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id) {
+    Tree tree;
+    tree.count = 0;
+    size_t prefix_len = strlen(prefix);
+
+    int i = 0;
+    while (i < count && tree.count < MAX_TREE_ENTRIES) {
+        const IndexEntry *entry = &entries[i];
+
+        // 1. Check if this file is inside our current directory (matches the prefix)
+        // If our prefix is "src/", we want to skip "README.md"
+        if (strncmp(entry->path, prefix, prefix_len) != 0) {
+            i++;
+            continue;
+        }
+
+        // 2. Look at the path *after* our current directory prefix
+        const char *rel_path = entry->path + prefix_len;
+        
+        // 3. Look for a slash to see if it's a file or a folder
+        const char *slash = strchr(rel_path, '/');
+
+        if (slash == NULL) {
+            // NO SLASH: It's a direct file in this folder! 
+            // We add it to our current Tree.
+            TreeEntry *te = &tree.entries[tree.count++];
+            
+            te->mode = get_file_mode(entry->path); // Uses the provided helper function
+            strncpy(te->name, rel_path, sizeof(te->name) - 1);
+            te->name[sizeof(te->name) - 1] = '\0';
+            te->hash = entry->hash;
+            
+            i++; // Move to the next item in the index
+        } else {
+            // SLASH FOUND: This is a subdirectory!
+            // We will build the logic to handle this in Commit 3.
+            i++; 
+        }
+    }
+
+    (void)out_id; // Still a placeholder
+    return -1; // We haven't saved the tree yet!
+}
 
 int tree_from_index(ObjectID *id_out) {
     Index index;
@@ -151,12 +194,4 @@ int tree_from_index(ObjectID *id_out) {
 }
 
 // Helper function to build a tree object for one specific directory level
-static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id) {
-    // Temporary placeholders to keep the compiler happy for this commit
-    (void)entries;
-    (void)count;
-    (void)prefix;
-    (void)out_id;
-    
-    return -1; // We will build this logic out in the next commits!
-}
+static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id);
