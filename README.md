@@ -615,7 +615,7 @@ The following questions cover filesystem concepts beyond the implementation scop
 - **Screenshot 1B (Sharded Store):** ![1B](screenshots/Screenshot_1B.JPG)
 
 ### Phase 2: Tree Objects
-- **Screenshot 2A (Tests):** ![2A](screenshots/Screenshot_2A.png)
+- **Screenshot 2A (Tests):** ![2A](screenshots/Screenshot_2A.JPG)
 - **Screenshot 2B (Raw Tree Hex Dump):** ![2B](screenshots/Screenshot_2B.JPG)
 
 ### Phase 3: The Index
