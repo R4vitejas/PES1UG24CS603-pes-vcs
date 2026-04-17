@@ -201,6 +201,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 //
 // The caller is responsible for calling free(*data_out).
 // Returns 0 on success, -1 on error (file not found, corrupt, etc.).
+
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out) {
     // 1. Build the file path from the hash
     char path[512];
@@ -243,11 +244,55 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
         return -1; // Hash mismatch! Data is corrupted or tampered with.
     }
 
-    // Temporary placeholders to prevent compiler warnings
-    (void)type_out;
-    (void)data_out;
-    (void)len_out;
+    // --- NEW CODE FOR COMMIT 5 STARTS HERE ---
 
-    free(full_data); // Freeing temporarily
-    return -1; // Still returning -1 because we haven't extracted the data yet
+    // 4. Parse the header to extract type and size
+    // Find the null byte ('\0') that separates the header from the data
+    char *null_byte = memchr(full_data, '\0', file_size);
+    if (!null_byte) {
+        free(full_data);
+        return -1; // Malformed object
+    }
+
+    // Calculate exactly how long the header is
+    size_t header_len = (null_byte - (char *)full_data) + 1;
+
+    // Check the start of the string to determine the type
+    if (strncmp((char *)full_data, "blob ", 5) == 0) {
+        *type_out = OBJ_BLOB;
+    } else if (strncmp((char *)full_data, "tree ", 5) == 0) {
+        *type_out = OBJ_TREE;
+    } else if (strncmp((char *)full_data, "commit ", 7) == 0) {
+        *type_out = OBJ_COMMIT;
+    } else {
+        free(full_data);
+        return -1; // Unknown type
+    }
+
+    // Find the space character so we can read the size number that comes after it
+    char *space = strchr((char *)full_data, ' ');
+    if (!space || space > null_byte) {
+        free(full_data);
+        return -1;
+    }
+    
+    // Convert the size string (e.g., "16") into an actual integer variable
+    *len_out = strtoul(space + 1, NULL, 10);
+
+    // 5. Allocate the final data buffer and copy ONLY the data over
+    if (*len_out > 0) {
+        *data_out = malloc(*len_out);
+        if (!*data_out) {
+            free(full_data);
+            return -1;
+        }
+        memcpy(*data_out, full_data + header_len, *len_out);
+    } else {
+        *data_out = NULL; // Handle empty files safely
+    }
+
+    // Free our temporary buffer that held the combined header+data
+    free(full_data);
+    
+    return 0; // Absolute success!
 }
