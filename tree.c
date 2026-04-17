@@ -183,6 +183,7 @@ static int write_tree_level(const IndexEntry *entries, int count, const char *pr
             // --- NEW CODE FOR COMMIT 3: SUBDIRECTORY RECURSION ---
             
             // 1. Extract the name of the subdirectory (e.g., "src")
+            // Group files by subdirectory and recursively process them to build the tree hierarchy
             size_t dir_name_len = slash - rel_path;
             char dir_name[256];
             if (dir_name_len >= sizeof(dir_name)) dir_name_len = sizeof(dir_name) - 1;
