@@ -223,5 +223,19 @@ static int write_tree_level(const IndexEntry *entries, int count, const char *pr
         }
     }
 
-    return -1;
+    // Serialize and Save
+    void *tree_data = NULL;
+    size_t tree_len = 0;
+
+    if (tree_serialize(&tree, &tree_data, &tree_len) != 0) {
+        return -1;
+    }
+
+    if (object_write(OBJ_TREE, tree_data, tree_len, out_id) != 0) {
+        free(tree_data);
+        return -1;
+    }
+
+    free(tree_data);
+    return 0;
 }
