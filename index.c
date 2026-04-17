@@ -16,6 +16,7 @@
 // TODO functions:     index_load, index_save, index_add
 
 #include "index.h"
+#include "pes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +24,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *out_id);
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
 
@@ -134,6 +137,7 @@ int index_status(const Index *index) {
 //   - hex_to_hash                      : converting the parsed string to ObjectID
 //
 // Returns 0 on success, -1 on error.
+// Manually declaring object_write to satisfy the compiler
 int index_load(Index *index) {
     index->count = 0; // Initialize an empty index
 
@@ -226,8 +230,33 @@ int index_save(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_add(Index *index, const char *path) {
-    // TODO: Implement file staging
-    // (See Lab Appendix for logical steps)
-    (void)index; (void)path;
-    return -1;
+    // 1. Get file metadata (mode, size, mtime)
+    struct stat st;
+    if (lstat(path, &st) != 0) {
+        perror("stat");
+        return -1;
+    }
+
+    // 2. Read file content
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    void *buf = malloc(st.st_size);
+    if (!buf) { fclose(f); return -1; }
+    
+    if (fread(buf, 1, st.st_size, f) != (size_t)st.st_size) {
+        free(buf); fclose(f); return -1;
+    }
+    fclose(f);
+
+    // 3. Write content to object store and get the hash (ObjectID)
+    ObjectID hash;
+    if (object_write(OBJ_BLOB, buf, st.st_size, &hash) != 0) {
+        free(buf); return -1;
+    }
+    free(buf);
+
+    // (Note: We'll implement updating the Index entry in the next commit)
+    (void)index;
+    return 0; 
 }
