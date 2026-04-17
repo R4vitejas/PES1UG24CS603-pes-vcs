@@ -10,6 +10,7 @@
 //   "100644 hello.txt\0" followed by 32 raw bytes of SHA-256
 
 #include "tree.h"
+#include "pes.h"
 #include "index.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,49 +133,7 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 // Returns 0 on success, -1 on error.
 // Forward declaration of our recursive helper function
 // Helper function to build a tree object for one specific directory level
-static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id) {
-    Tree tree;
-    tree.count = 0;
-    size_t prefix_len = strlen(prefix);
-
-    int i = 0;
-    while (i < count && tree.count < MAX_TREE_ENTRIES) {
-        const IndexEntry *entry = &entries[i];
-
-        // 1. Check if this file is inside our current directory (matches the prefix)
-        // If our prefix is "src/", we want to skip "README.md"
-        if (strncmp(entry->path, prefix, prefix_len) != 0) {
-            i++;
-            continue;
-        }
-
-        // 2. Look at the path *after* our current directory prefix
-        const char *rel_path = entry->path + prefix_len;
-        
-        // 3. Look for a slash to see if it's a file or a folder
-        const char *slash = strchr(rel_path, '/');
-
-        if (slash == NULL) {
-            // NO SLASH: It's a direct file in this folder! 
-            // We add it to our current Tree.
-            TreeEntry *te = &tree.entries[tree.count++];
-            
-            te->mode = get_file_mode(entry->path); // Uses the provided helper function
-            strncpy(te->name, rel_path, sizeof(te->name) - 1);
-            te->name[sizeof(te->name) - 1] = '\0';
-            te->hash = entry->hash;
-            
-            i++; // Move to the next item in the index
-        } else {
-            // SLASH FOUND: This is a subdirectory!
-            // We will build the logic to handle this in Commit 3.
-            i++; 
-        }
-    }
-
-    (void)out_id; // Still a placeholder
-    return -1; // We haven't saved the tree yet!
-}
+static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id);
 
 int tree_from_index(ObjectID *id_out) {
     Index index;
@@ -194,4 +153,75 @@ int tree_from_index(ObjectID *id_out) {
 }
 
 // Helper function to build a tree object for one specific directory level
-static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id);
+// Helper function to build a tree object for one specific directory level
+static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *out_id) {
+    Tree tree;
+    tree.count = 0;
+    size_t prefix_len = strlen(prefix);
+
+    int i = 0;
+    while (i < count && tree.count < MAX_TREE_ENTRIES) {
+        const IndexEntry *entry = &entries[i];
+
+        if (strncmp(entry->path, prefix, prefix_len) != 0) {
+            i++;
+            continue;
+        }
+
+        const char *rel_path = entry->path + prefix_len;
+        const char *slash = strchr(rel_path, '/');
+
+        if (slash == NULL) {
+            // Direct file
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = get_file_mode(entry->path); 
+            strncpy(te->name, rel_path, sizeof(te->name) - 1);
+            te->name[sizeof(te->name) - 1] = '\0';
+            te->hash = entry->hash;
+            i++; 
+        } else {
+            // --- NEW CODE FOR COMMIT 3: SUBDIRECTORY RECURSION ---
+            
+            // 1. Extract the name of the subdirectory (e.g., "src")
+            size_t dir_name_len = slash - rel_path;
+            char dir_name[256];
+            if (dir_name_len >= sizeof(dir_name)) dir_name_len = sizeof(dir_name) - 1;
+            memcpy(dir_name, rel_path, dir_name_len);
+            dir_name[dir_name_len] = '\0';
+
+            // 2. Construct the new prefix for the files inside this directory (e.g., "src/")
+            char new_prefix[512];
+            snprintf(new_prefix, sizeof(new_prefix), "%s%s/", prefix, dir_name);
+            size_t new_prefix_len = strlen(new_prefix);
+
+            // 3. Count how many consecutive files belong to this exact subdirectory
+            // Git requires index entries to be sorted, so all files in a folder will be grouped together!
+            int sub_count = 0;
+            while (i + sub_count < count) {
+                if (strncmp(entries[i + sub_count].path, new_prefix, new_prefix_len) == 0) {
+                    sub_count++;
+                } else {
+                    break;
+                }
+            }
+
+            // 4. Recursively build the tree for this subdirectory!
+            ObjectID sub_tree_id;
+            if (write_tree_level(&entries[i], sub_count, new_prefix, &sub_tree_id) != 0) {
+                return -1;
+            }
+
+            // 5. Add this newly built directory to our current tree
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = MODE_DIR; // Use the macro provided at the top of tree.c
+            strncpy(te->name, dir_name, sizeof(te->name) - 1);
+            te->name[sizeof(te->name) - 1] = '\0';
+            te->hash = sub_tree_id;
+
+            // 6. Skip past all the files we just processed so we don't process them again
+            i += sub_count;
+        }
+    }
+
+    return -1;
+}
