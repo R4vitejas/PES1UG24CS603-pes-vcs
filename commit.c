@@ -15,6 +15,7 @@
 // TODO functions:     commit_create
 
 #include "commit.h"
+#include "pes.h"
 #include "index.h"
 #include "tree.h"
 #include <stdio.h>
@@ -194,8 +195,16 @@ int head_update(const ObjectID *new_commit) {
 //
 // Returns 0 on success, -1 on error.
 int commit_create(const char *message, ObjectID *commit_id_out) {
-    // TODO: Implement commit creation
-    // (See Lab Appendix for logical steps)
+    Commit commit;
+    memset(&commit, 0, sizeof(Commit));
+
+    // 1. Generate the root tree from the index
+    // Note: tree_from_index only takes ONE argument in your implementation
+    if (tree_from_index(&commit.tree) != 0) {
+        return -1;
+    }
+
+    // (Remaining steps will be implemented in the next commits)
     (void)message; (void)commit_id_out;
-    return -1;
+    return 0; 
 }
