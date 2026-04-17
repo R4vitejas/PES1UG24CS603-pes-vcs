@@ -198,22 +198,35 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
     Commit commit;
     memset(&commit, 0, sizeof(Commit));
 
+    // 1. Root Tree
     if (tree_from_index(&commit.tree) != 0) return -1;
+
+    // 2. Metadata
     snprintf(commit.author, sizeof(commit.author), "%s", pes_author());
     commit.timestamp = (uint64_t)time(NULL);
     snprintf(commit.message, sizeof(commit.message), "%s", message);
-    if (head_read(&commit.parent) == 0) commit.has_parent = 1;
 
+    // 3. Parent
+    if (head_read(&commit.parent) == 0) {
+        commit.has_parent = 1;
+    }
+
+    // 4. Serialize
     void *commit_data = NULL;
     size_t commit_len = 0;
-    commit_serialize(&commit, &commit_data, &commit_len);
+    if (commit_serialize(&commit, &commit_data, &commit_len) != 0) return -1;
 
-    // 5. Write to object store: Save the commit and get its ID
+    // 5. Write Object
     if (object_write(OBJ_COMMIT, commit_data, commit_len, commit_id_out) != 0) {
         free(commit_data);
         return -1;
     }
-
     free(commit_data);
-    return 0; 
+
+    // 6. Update HEAD: Make this new commit the current tip of the branch
+    if (head_update(commit_id_out) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
