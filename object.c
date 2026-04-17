@@ -122,11 +122,61 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     // 6. Deduplication check: if it already exists, we're done!
     if (object_exists(id_out)) {
         free(full_data);
-        return 0;
+        return 0; 
     }
 
-    free(full_data); // Temporarily freeing here until we write the save logic
-    return -1; // Still returning -1 because we haven't saved to disk yet
+    // --- NEW CODE FOR COMMIT 3 STARTS HERE ---
+
+    // 7. Create the shard directory (.pes/objects/XX/)
+    char final_path[512];
+    object_path(id_out, final_path, sizeof(final_path)); 
+
+    char shard_dir[512];
+    strncpy(shard_dir, final_path, sizeof(shard_dir));
+    // Find the last slash to isolate the directory part
+    char *last_slash = strrchr(shard_dir, '/');
+    if (last_slash) *last_slash = '\0';
+
+    // Create the directory. Ignore return value because it failing usually just means it already exists.
+    mkdir(shard_dir, 0755); 
+
+    // 8. Write to a temporary file in the same shard directory
+    char temp_path[1024]; // Using 1024 to prevent the truncation warning!
+    snprintf(temp_path, sizeof(temp_path), "%s/temp_write", shard_dir);
+    
+    int fd = open(temp_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (fd < 0) {
+        free(full_data);
+        return -1;
+    }
+
+    ssize_t written = write(fd, full_data, full_size);
+    if (written < 0 || (size_t)written != full_size) {
+        close(fd);
+        unlink(temp_path); // Delete the broken temp file
+        free(full_data);
+        return -1;
+    }
+
+    // 9. fsync() the file, then atomically rename it, then fsync the directory
+    fsync(fd);
+    close(fd);
+
+    if (rename(temp_path, final_path) < 0) {
+        unlink(temp_path);
+        free(full_data);
+        return -1;
+    }
+
+    // Open the directory and sync it to ensure the rename is saved to the physical disk
+    int dir_fd = open(shard_dir, O_RDONLY);
+    if (dir_fd >= 0) {
+        fsync(dir_fd);
+        close(dir_fd);
+    }
+
+    free(full_data);
+    return 0; // Success!
 }
 
 // Read an object from the store.
