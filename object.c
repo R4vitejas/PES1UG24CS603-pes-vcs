@@ -102,16 +102,31 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     else return -1; // Unknown type
 
     // 2. Build the header: "<type> <size>\0"
-    // We add 1 to snprintf's return value to include the null terminator in our count
     char header[128];
     int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len) + 1;
 
-    // Temporary placeholders so the compiler doesn't complain about unused variables yet
-    (void)header_len;
-    (void)data;
-    (void)id_out;
+    // 3. Allocate memory for the full object (Header + Data)
+    size_t full_size = header_len + len;
+    uint8_t *full_data = malloc(full_size);
+    if (!full_data) return -1;
 
-    return -1; // We will remove this in the next commit
+    // 4. Copy the header and data into our new buffer
+    memcpy(full_data, header, header_len);
+    if (len > 0 && data != NULL) {
+        memcpy(full_data + header_len, data, len);
+    }
+
+    // 5. Compute SHA-256 hash of the FULL object
+    compute_hash(full_data, full_size, id_out);
+
+    // 6. Deduplication check: if it already exists, we're done!
+    if (object_exists(id_out)) {
+        free(full_data);
+        return 0;
+    }
+
+    free(full_data); // Temporarily freeing here until we write the save logic
+    return -1; // Still returning -1 because we haven't saved to disk yet
 }
 
 // Read an object from the store.
