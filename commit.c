@@ -199,26 +199,21 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
     memset(&commit, 0, sizeof(Commit));
 
     if (tree_from_index(&commit.tree) != 0) return -1;
-
     snprintf(commit.author, sizeof(commit.author), "%s", pes_author());
     commit.timestamp = (uint64_t)time(NULL);
     snprintf(commit.message, sizeof(commit.message), "%s", message);
+    if (head_read(&commit.parent) == 0) commit.has_parent = 1;
 
-    if (head_read(&commit.parent) == 0) {
-        commit.has_parent = 1;
-    } else {
-        commit.has_parent = 0;
-    }
-
-    // 4. Serialize: Convert the struct into a text buffer
     void *commit_data = NULL;
     size_t commit_len = 0;
-    if (commit_serialize(&commit, &commit_data, &commit_len) != 0) {
+    commit_serialize(&commit, &commit_data, &commit_len);
+
+    // 5. Write to object store: Save the commit and get its ID
+    if (object_write(OBJ_COMMIT, commit_data, commit_len, commit_id_out) != 0) {
+        free(commit_data);
         return -1;
     }
 
-    // (Next commit: object_write)
     free(commit_data);
-    (void)commit_id_out;
-    return 0;
+    return 0; 
 }
