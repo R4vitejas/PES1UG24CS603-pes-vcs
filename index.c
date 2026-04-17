@@ -178,11 +178,42 @@ int index_load(Index *index) {
 //   - rename                           : atomically moving the temp file over the old index
 //
 // Returns 0 on success, -1 on error.
+// Helper for qsort to sort index entries by path
+static int compare_index_entries(const void *a, const void *b) {
+    return strcmp(((const IndexEntry *)a)->path, ((const IndexEntry *)b)->path);
+}
+
 int index_save(const Index *index) {
-    // TODO: Implement atomic index saving
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+    // 1. Create a mutable copy and sort it (Git requirement)
+    Index sorted_index = *index;
+    qsort(sorted_index.entries, sorted_index.count, sizeof(IndexEntry), compare_index_entries);
+
+    // 2. Open temporary file
+    FILE *f = fopen(".pes/index.tmp", "w");
+    if (!f) return -1;
+
+    // 3. Write entries in text format
+    for (int i = 0; i < sorted_index.count; i++) {
+        IndexEntry *e = &sorted_index.entries[i];
+        char hex[HASH_HEX_SIZE];
+        hash_to_hex(&e->hash, hex);
+
+        fprintf(f, "%o %s %ld %u %s\n", 
+                e->mode, hex, e->mtime_sec, e->size, e->path);
+    }
+
+    // 4. Ensure data is physically on disk (The "Atomic" part)
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+
+    // 5. Atomic swap: rename temp file to the real index file
+    if (rename(".pes/index.tmp", ".pes/index") != 0) {
+        unlink(".pes/index.tmp");
+        return -1;
+    }
+
+    return 0;
 }
 
 // Stage a file for the next commit.
