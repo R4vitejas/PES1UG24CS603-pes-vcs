@@ -198,13 +198,21 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
     Commit commit;
     memset(&commit, 0, sizeof(Commit));
 
-    // 1. Generate the root tree from the index
-    // Note: tree_from_index only takes ONE argument in your implementation
-    if (tree_from_index(&commit.tree) != 0) {
-        return -1;
+    if (tree_from_index(&commit.tree) != 0) return -1;
+
+    // 2. Set Metadata: Author and Timestamp
+    // pes_author() and the commit message
+    snprintf(commit.author, sizeof(commit.author), "%s", pes_author());
+    commit.timestamp = (uint64_t)time(NULL);
+    snprintf(commit.message, sizeof(commit.message), "%s", message);
+
+    // 3. Handle Parent: If HEAD exists, this commit's parent is the current HEAD
+    if (head_read(&commit.parent) == 0) {
+        commit.has_parent = 1;
+    } else {
+        commit.has_parent = 0; // First commit ever!
     }
 
-    // (Remaining steps will be implemented in the next commits)
-    (void)message; (void)commit_id_out;
+    (void)commit_id_out;
     return 0; 
 }
