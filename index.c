@@ -139,35 +139,29 @@ int index_status(const Index *index) {
 // Returns 0 on success, -1 on error.
 // Manually declaring object_write to satisfy the compiler
 int index_load(Index *index) {
-    index->count = 0; // Initialize an empty index
-
-    // 1. Open the index file
+    index->count = 0;
     FILE *f = fopen(".pes/index", "r");
-    if (!f) {
-        // If the file doesn't exist, that's fine! It just means nothing is staged yet.
-        return 0; 
-    }
+    if (!f) return 0; 
 
-    // 2. Read the file line by line
-    // Format: <mode-octal> <64-char-hex-hash> <mtime-seconds> <size> <path>
     char hex_hash[HASH_HEX_SIZE];
     while (index->count < MAX_INDEX_ENTRIES) {
         IndexEntry *entry = &index->entries[index->count];
         
-        // fscanf reads space-separated values. %s reads until the next space.
-        // We use %255[^\n] for the path to read everything else on the line, even if the filename has spaces.
+        // ADDED A SPACE before %255 to skip the space after the size
         int matched = fscanf(f, "%o %64s %ld %u %255[^\n]", 
                              &entry->mode, hex_hash, &entry->mtime_sec, &entry->size, entry->path);
         
-        if (matched != 5) {
-            break; // End of file or malformed line
+        if (matched != 5) break;
+
+        // Clean up the path: fscanf with %[^\n] might capture a leading space
+        // if the space in the format string isn't handled perfectly by the OS.
+        if (entry->path[0] == ' ') {
+            memmove(entry->path, entry->path + 1, strlen(entry->path));
         }
 
-        // Convert the string representation of the hash back into binary bytes
         hex_to_hash(hex_hash, &entry->hash);
         index->count++;
     }
-
     fclose(f);
     return 0;
 }
@@ -188,35 +182,34 @@ static int compare_index_entries(const void *a, const void *b) {
 }
 
 int index_save(const Index *index) {
-    // 1. Create a mutable copy and sort it (Git requirement)
-    Index sorted_index = *index;
-    qsort(sorted_index.entries, sorted_index.count, sizeof(IndexEntry), compare_index_entries);
+    if (!index) return -1;
 
-    // 2. Open temporary file
+    // We sort the entries in-place via the pointer to avoid stack overflow
+    Index *mutable_index = (Index *)index;
+    if (mutable_index->count > 1) {
+        qsort(mutable_index->entries, mutable_index->count, sizeof(IndexEntry), compare_index_entries);
+    }
+
     FILE *f = fopen(".pes/index.tmp", "w");
     if (!f) return -1;
 
-    // 3. Write entries in text format
-    for (int i = 0; i < sorted_index.count; i++) {
-        IndexEntry *e = &sorted_index.entries[i];
+    for (int i = 0; i < index->count; i++) {
+        IndexEntry *e = &index->entries[i];
         char hex[HASH_HEX_SIZE];
         hash_to_hex(&e->hash, hex);
 
         fprintf(f, "%o %s %ld %u %s\n", 
-                e->mode, hex, e->mtime_sec, e->size, e->path);
+                e->mode, hex, (long)e->mtime_sec, e->size, e->path);
     }
 
-    // 4. Ensure data is physically on disk (The "Atomic" part)
     fflush(f);
     fsync(fileno(f));
     fclose(f);
 
-    // 5. Atomic swap: rename temp file to the real index file
     if (rename(".pes/index.tmp", ".pes/index") != 0) {
         unlink(".pes/index.tmp");
         return -1;
     }
-
     return 0;
 }
 
