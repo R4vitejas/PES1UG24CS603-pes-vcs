@@ -265,7 +265,12 @@ int index_add(Index *index, const char *path) {
         entry->path[sizeof(entry->path) - 1] = '\0';
     }
 
-    // (Next commit will handle metadata and saving)
-    entry->hash = hash; 
-    return 0; 
+    // 5. Cache the metadata (this is what lets index_status run fast!)
+    entry->mode = st.st_mode;
+    entry->hash = hash;
+    entry->mtime_sec = (long)st.st_mtime;
+    entry->size = (uint32_t)st.st_size;
+
+    // 6. Save the index back to disk atomically
+    return index_save(index);
 }
