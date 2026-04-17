@@ -135,10 +135,37 @@ int index_status(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_load(Index *index) {
-    // TODO: Implement index loading
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+    index->count = 0; // Initialize an empty index
+
+    // 1. Open the index file
+    FILE *f = fopen(".pes/index", "r");
+    if (!f) {
+        // If the file doesn't exist, that's fine! It just means nothing is staged yet.
+        return 0; 
+    }
+
+    // 2. Read the file line by line
+    // Format: <mode-octal> <64-char-hex-hash> <mtime-seconds> <size> <path>
+    char hex_hash[HASH_HEX_SIZE];
+    while (index->count < MAX_INDEX_ENTRIES) {
+        IndexEntry *entry = &index->entries[index->count];
+        
+        // fscanf reads space-separated values. %s reads until the next space.
+        // We use %255[^\n] for the path to read everything else on the line, even if the filename has spaces.
+        int matched = fscanf(f, "%o %64s %ld %u %255[^\n]", 
+                             &entry->mode, hex_hash, &entry->mtime_sec, &entry->size, entry->path);
+        
+        if (matched != 5) {
+            break; // End of file or malformed line
+        }
+
+        // Convert the string representation of the hash back into binary bytes
+        hex_to_hash(hex_hash, &entry->hash);
+        index->count++;
+    }
+
+    fclose(f);
+    return 0;
 }
 
 // Save the index to .pes/index atomically.
