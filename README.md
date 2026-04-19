@@ -611,52 +611,82 @@ The following questions cover filesystem concepts beyond the implementation scop
 ## Implementation Screenshots
 
 ### Phase 1: Object Storage
-- **Screenshot 1A (Tests):** ![1A](screenshots/Screenshot_1A.JPG)
-- **Screenshot 1B (Sharded Store):** ![1B](screenshots/Screenshot_1B.JPG)
+
+**Screenshot 1A (Tests):**
+
+![1A](screenshots/Screenshot_1A.JPG)
+
+**Screenshot 1B (Sharded Store):**
+
+![1B](screenshots/Screenshot_1B.JPG)
 
 ### Phase 2: Tree Objects
-- **Screenshot 2A (Tests):** ![2A](screenshots/Screenshot_2A.JPG)
-- **Screenshot 2B (Raw Tree Hex Dump):** ![2B](screenshots/Screenshot_2B.JPG)
+
+**Screenshot 2A (Tests):**
+
+![2A](screenshots/Screenshot_2A.JPG)
+
+**Screenshot 2B (Raw Tree Hex Dump):**
+
+![2B](screenshots/Screenshot_2B.JPG)
 
 ### Phase 3: The Index
-- **Screenshot 3A (Status Output):** ![3A](screenshots/Screenshot_3A.JPG)
-- **Screenshot 3B (Index File Content):** ![3B](screenshots/Screenshot_3B.JPG)
+
+**Screenshot 3A (Status Output):**
+
+![3A](screenshots/Screenshot_3A.JPG)
+
+**Screenshot 3B (Index File Content):**
+
+![3B](screenshots/Screenshot_3B.JPG)
 
 ### Phase 4: Commits and History
-- **Screenshot 4A (Log Output):** ![4A](screenshots/Screenshot_4A.JPG)
-- **Screenshot 4B (Object Growth):** ![4B](screenshots/Screenshot_4B.JPG)
-- **Screenshot 4C (Reference Chain):** ![4C](screenshots/Screenshot_4C.JPG)
+
+**Screenshot 4A (Log Output):**
+
+![4A](screenshots/Screenshot_4A.JPG)
+
+**Screenshot 4B (Object Growth):**
+
+![4B](screenshots/Screenshot_4B.JPG)
+
+**Screenshot 4C (Reference Chain):**
+
+![4C](screenshots/Screenshot_4C.JPG)
 
 ### Final Integration
-- **Full Integration Test:** ![Integration](screenshots/Screenshot_Final.JPG)
+
+**Full Integration Test:**
+
+![Integration](screenshots/Screenshot_Final.JPG)
 
 ---
 
-# Phase 5 & 6: Analysis Answers
+## Phase 5 & 6: Analysis Answers
 
-## Q5.1: Implementing Checkout
-A branch in our VCS is essentially a pointer—a file containing a commit hash. To implement `pes checkout <branch>`, we must first update the `.pes/HEAD` file so it points to the chosen branch reference. Once the pointer is updated, the working directory must be synchronized to match that branch's specific state. 
+### Q5.1: Implementing Checkout
+A branch in our VCS is essentially a pointer—a file containing a commit hash. To implement `pes checkout <branch>`, we must update the `.pes/HEAD` file so it points to the chosen branch reference (e.g., `ref: refs/heads/main`). Once the pointer is updated, the working directory must be synchronized to match that branch's specific state. 
 
 This requires a recursive traversal of the target branch's root tree object. The complexity arises from the **synchronization logic**: we have to create files that exist in the target branch but not in our current directory, delete files that are no longer present, and overwrite files that have changed. Crucially, we must implement a "safety gate" that prevents the checkout if the user has uncommitted "dirty" changes, as a naive checkout would overwrite their unsaved work.
 
-## Q5.2: Detecting Dirty Conflicts
+### Q5.2: Detecting Dirty Conflicts
 To detect a "dirty working directory," we perform a two-step metadata and content verification using only the index and the object store:
-1.  **Unstaged Changes:** We compare the current file metadata (mtime and size) in the working directory against the records in the **Index**. If they differ, the user has modified a tracked file but hasn't run `pes add`.
-2.  **Staged Changes:** We compare the hashes stored in the **Index** against the hashes recorded in the current **HEAD** commit’s tree. If the Index has a different hash, the user has staged a change but hasn't run `pes commit`.
+1. **Unstaged Changes:** We compare the current file metadata (mtime and size) in the working directory against the records in the **Index**. If they differ, the user has modified a tracked file but hasn't run `pes add`.
+2. **Staged Changes:** We compare the hashes stored in the **Index** against the hashes recorded in the current **HEAD** commit’s tree. If the Index has a different hash, the user has staged a change but hasn't run `pes commit`.
 
 If either check reveals a mismatch, the directory is "dirty." By refusing to switch branches in this state, we protect the user from accidental data loss.
 
-## Q5.3: Detached HEAD State
-A "Detached HEAD" occurs when the `.pes/HEAD` file contains a raw commit hash directly instead of a reference to a branch file. If you make a commit in this state, the VCS creates the commit object and updates `HEAD` to point to it, but no branch pointer (like `main`) moves forward to track it. These commits are effectively "nameless." If the user then checks out a different branch, the commits made in the detached state become **orphaned**—they remain in the object store but disappear from the standard log. To recover them, a user would need to locate the commit hash in their terminal history and manually create a new branch pointer at that hash.
+### Q5.3: Detached HEAD State
+A "Detached HEAD" occurs when the `.pes/HEAD` file contains a raw commit hash directly instead of a reference to a branch file. If you make a commit in this state, the VCS still creates the commit object and updates `HEAD` to point to it, but no branch pointer (like `main`) moves forward to track it. These commits are effectively "nameless." If the user then checks out a different branch, the commits made in the detached state become **orphaned**—they remain in the object store but disappear from the standard log. To recover them, a user would need to locate the commit hash in their terminal history and manually create a new branch pointer at that hash.
 
-## Q6.1: Garbage Collection (Mark and Sweep)
+### Q6.1: Garbage Collection (Mark and Sweep)
 Over time, the object store fills up with "dangling" objects from deleted branches or abandoned commits. To clean this up, we use a **Mark and Sweep** algorithm:
 * **Mark Phase:** We start at all "reachable roots"—this includes the HEAD, all branches in `refs/heads/`, and any tags. We recursively follow every link (Commits → Trees → Blobs), adding every encountered hash to a **Hash Set** data structure.
 * **Sweep Phase:** We iterate through every file in `.pes/objects`. Any file whose hash is not in our "Reachable" set is identified as garbage and deleted.
 
 For a repository with 100,000 commits and 50 branches, we wouldn't just visit the commits; we have to visit every unique tree and blob version. This would likely involve visiting **hundreds of thousands of objects** to ensure we don't accidentally delete shared files that are still active in other parts of the history.
 
-## Q6.2: GC Race Conditions
+### Q6.2: GC Race Conditions
 Running garbage collection concurrently with a commit is dangerous because of potential **timing race conditions**. For example, a user might run `pes add`, which writes a new blob to the object store. If the GC runs at that exact moment—before the user runs `pes commit` to link that blob to a tree—the GC will see the blob as "unreachable" and delete it. When the user finally tries to commit, the commit object will point to a hash that no longer exists on disk, corrupting the repository. 
 
 Git's real-world GC avoids this by using a **grace period** (usually 14 days). It will only prune unreachable objects that are older than a specific "last modified" timestamp, ensuring that fresh, unlinked objects are safe from deletion while they are being staged.
